@@ -1,0 +1,84 @@
+/* Chickpea brand palette — same values as chickpea_events/config.py */
+:root {
+  --wine: #5B1A2D;
+  --gold: #CEA80D;
+  --cream: #FCEFE6;
+  --ink: #2B2320;
+  --muted: #7a6c66;
+  --line: #E9DFC9;
+  --card: #ffffff;
+  --ok: #40583A;
+  --err: #B22815;
+  --gold-soft: #f7ecc0;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  min-height: 100vh;
+}
+header {
+  background: var(--wine);
+  color: var(--cream);
+  padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 5;
+}
+header h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+header h1 span { color: var(--gold); }
+header a { color: var(--cream); opacity: .7; font-size: 14px; text-decoration: none; }
+main { max-width: 560px; margin: 0 auto; padding: 16px 16px calc(32px + env(safe-area-inset-bottom)); }
+
+.search { position: sticky; top: 56px; padding: 4px 0 12px; background: var(--cream); z-index: 4; }
+input[type=search], input[type=password] {
+  width: 100%; font-size: 17px; padding: 14px 16px;
+  border: 1.5px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink);
+  outline: none; -webkit-appearance: none;
+}
+input:focus { border-color: var(--wine); }
+.hint { color: var(--muted); font-size: 14px; margin: 8px 2px 0; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px 16px; margin-bottom: 10px;
+}
+.card.is-vip { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.card .top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.card .name { font-weight: 650; font-size: 17px; }
+.card .visits { color: var(--muted); font-size: 14px; white-space: nowrap; }
+.card .meta { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+button.tag {
+  font: inherit; font-size: 15px; font-weight: 600;
+  padding: 10px 16px; border-radius: 999px; min-height: 44px;
+  border: 1.5px solid var(--wine); background: #fff; color: var(--wine); cursor: pointer;
+}
+button.tag.on { background: var(--gold-soft); border-color: var(--gold); color: var(--ink); }
+button.tag.on::before { content: "★ "; color: var(--gold); }
+button.tag:disabled { opacity: .5; }
+button.tag.confirm { background: var(--err); border-color: var(--err); color: #fff; }
+button.tag.confirm::before { content: none; }
+
+.btn {
+  width: 100%; font: inherit; font-weight: 650; font-size: 17px; margin-top: 12px;
+  padding: 14px; border-radius: 12px; border: 0; background: var(--wine); color: var(--cream);
+}
+.login { max-width: 360px; margin: 18vh auto 0; padding: 0 16px; text-align: center; }
+.login h1 { color: var(--wine); font-size: 26px; margin: 0 0 4px; }
+.login p { color: var(--muted); margin: 0 0 20px; }
+.error { color: var(--err); margin-top: 10px; font-size: 15px; }
+
+.toast {
+  position: fixed; left: 16px; right: 16px; bottom: calc(20px + env(safe-area-inset-bottom));
+  max-width: 528px; margin: 0 auto; padding: 14px 16px; border-radius: 12px;
+  background: var(--ink); color: #fff; font-size: 15px; text-align: center;
+  transform: translateY(calc(100% + 60px)); visibility: hidden;
+  transition: transform .2s ease, visibility .2s; z-index: 10;
+}
+.toast.show { transform: none; visibility: visible; }
+.toast.err { background: var(--err); }
+.empty { text-align: center; color: var(--muted); padding: 32px 8px; }
