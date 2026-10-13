@@ -4,6 +4,9 @@
   const $q = $("q"), $clear = $("clear"), $res = $("results"), $home = $("home");
   const $toast = $("toast"), $toastMsg = $toast.querySelector(".msg"), $undo = $toast.querySelector("button");
   let timer, seq = 0, lastQuery = "";
+  const clients = new Map();       // id -> latest client summary
+  const openIds = new Set();       // cards with the notes drawer open
+  const bookingCache = new Map();  // client id -> upcoming bookings
 
   // ── Helpers ────────────────────────────────────────────────
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -65,6 +68,7 @@
 
   // ── Cards ──────────────────────────────────────────────────
   function card(c, likely, animate = true) {
+    clients.set(c.id, c);
     const stats = [[c.visits, c.visits === 1 ? "visit" : "visits"], [c.covers, "covers"]];
     if (c.spend > 0) stats.push([money(c.spend), "spent"]);
     if (c.pubs > 1) stats.push([c.pubs, "pubs"]);
@@ -85,7 +89,13 @@
       </div>
       <div class="stats">${stats.map(([v, l]) => `<div class="stat"><b>${esc(v)}</b><span>${l}</span></div>`).join("")}</div>
       ${meta.length ? `<div class="meta">${meta.map(m => `<div>${m}</div>`).join("")}</div>` : ""}
-      <div class="actions">${buttons}</div>
+      <div class="actions">${buttons}
+        <button class="ghost notes-toggle" data-id="${esc(c.id)}" aria-expanded="false">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H8l-4 4z"/></svg>
+          Notes &amp; bookings${c.notes ? ' <span class="dot" aria-label="has notes"></span>' : ""}
+        </button>
+      </div>
+      <div class="drawer" id="d-${esc(c.id)}" hidden></div>
     </article>`;
   }
 
@@ -107,6 +117,7 @@
     if (q.length < 2) { lastQuery = ""; showHome(); return; }
     if (q === lastQuery && $res.innerHTML) return;
     lastQuery = q;
+    openIds.clear(); bookingCache.clear();
     $home.hidden = true;
     $res.innerHTML = `<div class="section-label">Searching SevenRooms…</div>` + `<div class="skeleton"></div>`.repeat(3);
     try {
@@ -139,7 +150,7 @@
         body: JSON.stringify({ client_id: id, tag, action }),
       });
       const el = $("c-" + client.id);
-      if (el) el.outerHTML = card(client, el.dataset.likely === "1", false);
+      if (el) { el.outerHTML = card(client, el.dataset.likely === "1", false); reopen(client.id); }
       pushRecent({ id: client.id, name: client.name, tag, action, at: Date.now() });
       buzz();
       return client;
@@ -147,7 +158,7 @@
       if (err.message === "auth") return null;
       const fresh = err.data && err.data.client;
       const el = $("c-" + id);
-      if (fresh && el) el.outerHTML = card(fresh, el.dataset.likely === "1", false);
+      if (fresh && el) { el.outerHTML = card(fresh, el.dataset.likely === "1", false); reopen(fresh.id); }
       else if (btn) { btn.disabled = false; btn.textContent = action === "add" ? "Mark " + tag : tag; }
       toast(err.message, { err: true });
       return null;
@@ -170,6 +181,111 @@
     toast(action === "add" ? `${client.name} is now ${tag} ★` : `${tag} removed from ${client.name}`, {
       undo: () => setTag(id, tag, action === "add" ? "remove" : "add").then(c => c && toast("Undone")),
     });
+  });
+
+
+  // ── Notes & bookings drawer ────────────────────────────────
+  const fmtDay = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const noteHtml = t => t ? `<div class="note-text">${esc(t)}</div>` : `<div class="note-text none">No notes yet.</div>`;
+  const noteForm = (kind, id, placeholder, label) => `
+    <form class="note-form" data-kind="${kind}" data-id="${esc(id)}">
+      <textarea maxlength="500" rows="2" placeholder="${esc(placeholder)}" aria-label="${esc(label)}"></textarea>
+      <div class="form-row"><button type="submit" class="solid">${esc(label)}</button>
+        ${kind === "booking" ? '<button type="button" class="ghost cancel-note">Cancel</button>' : ""}</div>
+    </form>`;
+
+  function bookingRow(b) {
+    const meta = [b.venue, b.guests ? `${b.guests} guest${b.guests === 1 ? "" : "s"}` : "", b.status && b.status !== "Booked" ? b.status : ""].filter(Boolean).map(esc).join(" · ");
+    return `<div class="booking" id="b-${esc(b.id)}">
+      <div class="when"><b>${esc(fmtDay(b.date))}${b.time ? " · " + esc(b.time) : ""}</b><span>${meta}</span></div>
+      ${b.notes ? noteHtml(b.notes) : ""}
+      <button type="button" class="link-btn add-bnote">+ Add booking note</button>
+      <div class="bform" hidden>${noteForm("booking", b.id, "e.g. Table by the fire, anniversary", "Save note")}</div>
+    </div>`;
+  }
+
+  function renderBookings(id) {
+    const box = document.querySelector(`#d-${CSS.escape(id)} .bookings`);
+    if (!box) return;
+    const list = bookingCache.get(id);
+    if (!list) { box.innerHTML = `<div class="skeleton small"></div>`; return; }
+    if (list.error) { box.innerHTML = `<div class="muted">${esc(list.error)}</div>`; return; }
+    box.innerHTML = list.length ? list.map(bookingRow).join("") : `<div class="muted">No upcoming bookings in the next 6 months.</div>`;
+  }
+
+  async function openDrawer(id) {
+    const c = clients.get(id), d = $("d-" + id);
+    if (!c || !d) return;
+    d.innerHTML = `
+      <section>
+        <h4>Guest note <span>Shows on every booking, at every pub</span></h4>
+        <div class="gnote">${noteHtml(c.notes)}</div>
+        ${noteForm("client", id, "e.g. Friend of Ethan, offer a drink on arrival", "Add guest note")}
+      </section>
+      <section>
+        <h4>Upcoming bookings</h4>
+        <div class="bookings"></div>
+      </section>`;
+    d.hidden = false;
+    d.closest(".card").querySelector(".notes-toggle").setAttribute("aria-expanded", "true");
+    openIds.add(id);
+    renderBookings(id);
+    if (!bookingCache.has(id)) {
+      try { bookingCache.set(id, (await api(`/api/client/${encodeURIComponent(id)}/bookings`)).bookings); }
+      catch (e) { if (e.message === "auth") return; bookingCache.set(id, { error: e.message }); }
+      renderBookings(id);
+    }
+  }
+  function closeDrawer(id) {
+    const d = $("d-" + id);
+    openIds.delete(id);
+    if (!d) return;
+    d.hidden = true; d.innerHTML = "";
+    d.closest(".card").querySelector(".notes-toggle").setAttribute("aria-expanded", "false");
+  }
+  function reopen(id) { if (openIds.has(id)) openDrawer(id); }
+
+  $res.addEventListener("click", e => {
+    const t = e.target.closest(".notes-toggle");
+    if (t) { openIds.has(t.dataset.id) ? closeDrawer(t.dataset.id) : openDrawer(t.dataset.id); return; }
+    const add = e.target.closest(".add-bnote");
+    if (add) { const f = add.nextElementSibling; f.hidden = false; add.hidden = true; f.querySelector("textarea").focus(); return; }
+    const cancel = e.target.closest(".cancel-note");
+    if (cancel) { const row = cancel.closest(".booking"); row.querySelector(".bform").hidden = true; row.querySelector(".add-bnote").hidden = false; }
+  });
+
+  $res.addEventListener("submit", async e => {
+    const form = e.target.closest(".note-form");
+    if (!form) return;
+    e.preventDefault();
+    const ta = form.querySelector("textarea"), btn = form.querySelector("button[type=submit]");
+    const text = ta.value.trim();
+    if (!text) { ta.focus(); return; }
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      const { item } = await api("/api/note", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: form.dataset.kind, id: form.dataset.id, text }),
+      });
+      if (form.dataset.kind === "client") {
+        const el = $("c-" + item.id);
+        if (el) { el.outerHTML = card(item, el.dataset.likely === "1", false); openDrawer(item.id); }
+        toast(`Guest note added for ${item.name}`);
+      } else {
+        const row = $("b-" + item.id);
+        if (row) row.outerHTML = bookingRow(item);
+        for (const list of bookingCache.values()) if (Array.isArray(list)) {
+          const i = list.findIndex(b => b.id === item.id); if (i >= 0) list[i] = item;
+        }
+        toast("Booking note added");
+      }
+      buzz();
+    } catch (err) {
+      if (err.message === "auth") return;
+      btn.disabled = false; btn.textContent = label;
+      toast(err.message, { err: true });
+    }
   });
 
   // ── Install ────────────────────────────────────────────────

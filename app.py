@@ -7,6 +7,11 @@ How SevenRooms tagging works (verified 9 Oct 2026, docs are login-gated):
   - Update:  POST /clients/{id}  form data  add_tags / remove_tags = "<Category>:<Tag>"
   - Wrong tag formats still return 200 but do nothing, so every change is
     re-read from SevenRooms and only reported as done if the tag really moved.
+  - Notes:   POST /clients/{id} or /reservations/{id}  form data  notes=<full text>
+    (replaces the whole field, so new notes are appended to what's there). On a
+    booking this sets the "client_requests" section, shown to staff under
+    "External Reservation Notes"; it can't be emptied via the API, only blanked.
+  - Upcoming bookings: GET /reservations?client_id=...&from_date&to_date
 
 Config (environment variables — never commit these):
   SR_CLIENT_ID, SR_CLIENT_SECRET   SevenRooms API key
@@ -19,7 +24,9 @@ import time
 import logging
 import secrets
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -27,7 +34,9 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 SR_BASE = "https://api.sevenrooms.com/2_4"
 VENUE_GROUP_ID = "ahNzfnNldmVucm9vbXMtc2VjdXJlciELEhRuaWdodGxvb3BfVmVudWVHcm91cBiAgIXEovSaCQw"
 TAG_CATEGORY = "VIP client type"
-ASSET_VERSION = "2"  # bump when CSS/JS change so installed apps pick up the new files
+UK = ZoneInfo("Europe/London")
+NOTE_MAX = 500
+ASSET_VERSION = "3"  # bump when CSS/JS change so installed apps pick up the new files
 VIP_TAGS = [t.strip() for t in os.environ.get("VIP_TAGS", "VIP").split(",") if t.strip()]
 
 app = Flask(__name__)
@@ -113,6 +122,7 @@ def summarise(c):
         "fav_venue": fav_venue if pubs > 1 else "",
         "last_visit": last_date,
         "last_venue": last_venue,
+        "notes": (c.get("notes") or "").strip(),
         "tags": sorted({t["tag_display"] for t in c.get("client_tags") or []
                         if t.get("group_display") == TAG_CATEGORY}),
     }
@@ -212,6 +222,79 @@ def tag():
     if not done:
         return jsonify(error="SevenRooms didn't apply the change.", client=summary), 502
     return jsonify(client=summary)
+
+
+def _clean_booking_notes(text):
+    # API-written notes land in a section SevenRooms labels itself; drop the label.
+    lines = [l for l in (text or "").splitlines() if l.strip() and l.strip() != "External Reservation Notes:"]
+    return "\n".join(lines).strip()
+
+
+def _booking(r):
+    return {
+        "id": r["id"],
+        "date": r.get("date") or "",
+        "time": (r.get("arrival_time") or r.get("time_slot_iso") or "")[:5],
+        "venue": venue_names().get(r.get("venue_id"), ""),
+        "guests": int(r.get("max_guests") or 0),
+        "status": r.get("status_display") or "",
+        "notes": _clean_booking_notes(r.get("notes")),
+    }
+
+
+@app.route("/api/client/<client_id>/bookings")
+@login_required
+def bookings(client_id):
+    today = datetime.now(UK).date()
+    r = sr("GET", "/reservations", params={
+        "client_id": client_id, "from_date": today.isoformat(),
+        "to_date": (today + timedelta(days=180)).isoformat(), "limit": 50})
+    if not r.ok:
+        log.warning("bookings failed %s %s", r.status_code, r.text[:200])
+        return jsonify(error="Couldn't load bookings from SevenRooms."), 502
+    rows = [x for x in r.json().get("data", {}).get("results", [])
+            if x.get("client_id") == client_id and "CANCEL" not in (x.get("status") or "").upper()
+            and "NO_SHOW" not in (x.get("status") or "").upper()]
+    rows = sorted((_booking(x) for x in rows), key=lambda b: (b["date"], b["time"]))
+    return jsonify(bookings=rows)
+
+
+@app.route("/api/note", methods=["POST"])
+@login_required
+def add_note():
+    """Append a dated note to a guest profile or a single booking."""
+    body = request.get_json(silent=True) or {}
+    kind, target_id = body.get("kind"), body.get("id")
+    text = " ".join((body.get("text") or "").split())  # one line, no stray whitespace
+    if kind not in ("client", "booking") or not target_id or not text:
+        return jsonify(error="Write a note first."), 400
+    if len(text) > NOTE_MAX:
+        return jsonify(error=f"Keep notes under {NOTE_MAX} characters."), 400
+
+    path = f"/clients/{target_id}" if kind == "client" else f"/reservations/{target_id}"
+    cur = sr("GET", path)
+    if not cur.ok or not cur.json().get("data"):
+        return jsonify(error="Couldn't find that in SevenRooms."), 404
+    # Guest profiles: `notes` is the whole note. Bookings: writing `notes` actually
+    # sets the API-owned "client_requests" section (staff see it under "External
+    # Reservation Notes"), and the booking's own notes stay untouched, so append
+    # to client_requests. Verified 13 Oct 2026.
+    data = cur.json()["data"]
+    existing = (data.get("notes" if kind == "client" else "client_requests") or "").strip()
+    now = datetime.now(UK)
+    line = f"[{now.day} {now:%b}, via VIPs] {text}"
+    new_notes = f"{existing}\n{line}" if existing else line
+
+    r = sr("POST", path, data={"notes": new_notes})
+    if not r.ok:
+        log.warning("note on %s failed %s %s", kind, r.status_code, r.text[:200])
+        return jsonify(error="SevenRooms rejected the note."), 502
+    after = sr("GET", path).json().get("data", {})
+    saved = line in (after.get("notes") or "")
+    log.info("NOTE %s %s -> %s", kind, target_id, "OK" if saved else "NOT APPLIED")
+    if not saved:
+        return jsonify(error="SevenRooms didn't save the note."), 502
+    return jsonify(item=summarise(after) if kind == "client" else _booking(after))
 
 
 @app.route("/sw.js")

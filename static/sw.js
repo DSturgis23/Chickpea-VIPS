@@ -1,12 +1,12 @@
 // Chickpea VIPs service worker: makes the app installable and gives it an
 // offline screen. Guest data is never cached; /api always goes to the network.
-const VERSION = "vips-v2";
+const VERSION = "vips-v3";
 const SHELL = [
   "/offline",
-  "/static/style.css?v=2",
-  "/static/app.js?v=2",
-  "/static/icon-192.png?v=2",
-  "/static/icon-512.png?v=2",
+  "/static/style.css?v=3",
+  "/static/app.js?v=3",
+  "/static/icon-192.png?v=3",
+  "/static/icon-512.png?v=3",
 ];
 
 self.addEventListener("install", e => {

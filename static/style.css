@@ -197,3 +197,35 @@ button.tag:disabled { opacity: .55; }
 .login .go { width: 100%; margin-top: 12px; padding: 15px; border: 0; border-radius: 14px; background: var(--gold); color: #2B2320; font-weight: 700; font-size: 17px; }
 .login .error { color: #ffb4a6; margin-top: 12px; font-size: 15px; }
 .recent .is-vip .avatar::after { width: 15px; height: 15px; font-size: 9px; right: -5px; bottom: -5px; }
+
+/* ── Notes & bookings drawer ────────────────────────────── */
+button.ghost {
+  font-size: 15px; font-weight: 600; padding: 10px 14px; border-radius: 999px; min-height: 44px;
+  border: 1.5px solid var(--line); background: transparent; color: var(--ink);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+button.ghost[aria-expanded="true"] { background: var(--surface-2); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); display: inline-block; }
+.drawer { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line); display: grid; gap: 18px; }
+.drawer h4 { margin: 0 0 8px; font-size: 14px; font-weight: 700; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.drawer h4 span { font-weight: 400; color: var(--muted); font-size: 13px; }
+.note-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.note-text.none, .muted { color: var(--muted); font-size: 14px; }
+.note-text.none { background: none; padding: 0; }
+.note-form { margin-top: 10px; display: grid; gap: 8px; }
+.note-form textarea {
+  width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 12px; resize: vertical;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); outline: none; min-height: 64px;
+}
+.note-form textarea:focus { border-color: var(--gold); }
+.form-row { display: flex; gap: 8px; }
+button.solid { border: 0; border-radius: 999px; padding: 10px 16px; min-height: 44px; font-weight: 650; font-size: 15px; background: var(--wine); color: #FCEFE6; }
+button.solid:disabled { opacity: .6; }
+.booking { border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 8px; }
+.booking + .booking { margin-top: 8px; }
+.booking .when b { display: block; font-size: 15px; }
+.booking .when span { font-size: 13px; color: var(--muted); }
+.link-btn { background: none; border: 0; padding: 4px 0; color: var(--wine); font-weight: 650; font-size: 14px; justify-self: start; }
+.bookings .skeleton.small { height: 64px; margin: 0; border-radius: 14px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .link-btn { color: var(--gold); } }
+:root[data-theme="dark"] .link-btn { color: var(--gold); }
