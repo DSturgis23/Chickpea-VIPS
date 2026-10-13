@@ -152,7 +152,7 @@ def summarise(c):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 WINDOW = 15 * 60
-PER_DEVICE_LIMIT = 5    # wrong PINs per device per window
+PER_DEVICE_LIMIT = 2    # wrong PINs per device per window
 GLOBAL_LIMIT = 25       # wrong PINs across everyone per window (stops guessing from many IPs)
 _fails = {}             # ip -> deque of failure times
 _all_fails = deque()
@@ -206,7 +206,9 @@ def login():
             mine.append(now)
             _all_fails.append(now)
             log.warning("LOGIN wrong PIN ip=%s", ip)
-            error = "That PIN isn't right."
+            left = PER_DEVICE_LIMIT - _recent(mine, now)
+            error = ("That PIN isn't right. " + (f"{left} {'try' if left == 1 else 'tries'} left."
+                     if left > 0 else "Locked for 15 minutes."))
     return render_template("login.html", error=error)
 
 
