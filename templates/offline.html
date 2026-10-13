@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "_head.html" %}
+</head>
+<body class="login-page">
+  <div class="login">
+    {% with size=72 %}{% include "_mark.html" %}{% endwith %}
+    <h1>You're <span>offline</span></h1>
+    <p>Chickpea VIPs needs a connection to reach SevenRooms. Check your signal and try again.</p>
+    <button class="go" type="button" onclick="location.reload()">Try again</button>
+  </div>
+</body>
+</html>

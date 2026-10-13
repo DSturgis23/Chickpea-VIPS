@@ -1,108 +1,73 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Chickpea VIPs</title>
-  <meta name="theme-color" content="#5B1A2D">
-  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="VIPs">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% include "_head.html" %}
 </head>
 <body>
-  <header>
-    <h1>Chickpea <span>VIPs</span></h1>
-    <a href="{{ url_for('logout') }}">Log out</a>
+  <header class="appbar">
+    <div class="row">
+      <div class="brand">
+        {% with size=34 %}{% include "_mark.html" %}{% endwith %}
+        <div class="word"><small>Chickpea</small><strong>VIPs</strong></div>
+      </div>
+      <button class="pill-btn gold" id="install" hidden>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M5 21h14"/></svg>
+        Install app
+      </button>
+      <a class="icon-btn" href="{{ url_for('logout') }}" aria-label="Log out" title="Log out">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+      </a>
+    </div>
   </header>
-  <main>
+
+  <div class="search-wrap">
     <div class="search">
-      <input id="q" type="search" placeholder="Guest name or email" autocomplete="off" autocapitalize="words" enterkeyhint="search">
-      <div class="hint" id="hint">Tags go on the guest's SevenRooms profile and show at every pub.</div>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search guest name or email" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search" aria-label="Search guests">
+      <button class="clear" id="clear" aria-label="Clear search" hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <main>
+    <div id="home">
+      <div id="recent-block" hidden>
+        <div class="section-label"><b>Recently tagged on this phone</b></div>
+        <ul class="recent" id="recent"></ul>
+        <div style="height:18px"></div>
+      </div>
+      <section class="welcome">
+        <h2>Who's a VIP?</h2>
+        <p>Tags go on the guest's SevenRooms profile, so every pub sees them on every booking.</p>
+        <ol class="steps">
+          <li><span class="n">1</span><span>Search their name or email.</span></li>
+          <li><span class="n">2</span><span>Pick the profile marked <b>Most likely</b>. Guests often have a few old duplicates.</span></li>
+          <li><span class="n">3</span><span>Tap <b>Mark {{ tags[0] }}</b>. To remove it, tap the gold button twice.</span></li>
+        </ol>
+      </section>
     </div>
     <div id="results"></div>
   </main>
-  <div class="toast" id="toast"></div>
 
-<script>
-const TAGS = {{ tags|tojson }};
-const $q = document.getElementById("q"), $res = document.getElementById("results"),
-      $hint = document.getElementById("hint"), $toast = document.getElementById("toast");
-let timer, seq = 0;
+  <div class="toast" id="toast" role="status" aria-live="polite"><span class="msg"></span><button type="button" hidden>Undo</button></div>
 
-function toast(msg, err) {
-  $toast.textContent = msg; $toast.className = "toast show" + (err ? " err" : "");
-  clearTimeout(toast.t); toast.t = setTimeout(() => $toast.className = "toast", 2800);
-}
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-function fmtDate(d) {
-  if (!d) return "";
-  return new Date(d + "T12:00:00").toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"});
-}
+  <div class="sheet-backdrop" id="ios-sheet" hidden>
+    <div class="sheet" role="dialog" aria-labelledby="ios-title">
+      <h3 id="ios-title">Add to your Home Screen</h3>
+      <p>Opens full-screen like a normal app, no browser bars.</p>
+      <ol class="steps">
+        <li><span class="n">1</span><span>Tap the Share button
+          <svg class="ios-share" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m0 0L8 7m4-4l4 4M5 11v8a2 2 0 002 2h10a2 2 0 002-2v-8"/></svg>
+          at the bottom of Safari.</span></li>
+        <li><span class="n">2</span><span>Scroll down and tap <b>Add to Home Screen</b>.</span></li>
+        <li><span class="n">3</span><span>Tap <b>Add</b>. Look for the gold star icon.</span></li>
+      </ol>
+      <button class="done" type="button" id="ios-done">Got it</button>
+    </div>
+  </div>
 
-function card(c) {
-  const meta = [];
-  if (c.last_visit) meta.push(`Last: ${fmtDate(c.last_visit)}${c.last_venue ? " · " + esc(c.last_venue) : ""}`);
-  const contact = [c.email, c.phone].filter(Boolean).map(esc).join(" · ");
-  const buttons = TAGS.map(t => {
-    const on = c.tags.includes(t);
-    return `<button class="tag${on ? " on" : ""}" data-id="${esc(c.id)}" data-tag="${esc(t)}" data-on="${on}">${on ? esc(t) : "Mark " + esc(t)}</button>`;
-  }).join("");
-  return `<div class="card${c.tags.length ? " is-vip" : ""}" id="c-${esc(c.id)}">
-    <div class="top"><div class="name">${esc(c.name || "(no name)")}</div>
-      <div class="visits">${c.visits} visit${c.visits === 1 ? "" : "s"}</div></div>
-    ${meta.length ? `<div class="meta">${meta.join("")}</div>` : ""}
-    ${contact ? `<div class="meta">${contact}</div>` : ""}
-    <div class="actions">${buttons}</div></div>`;
-}
-
-async function api(url, opts) {
-  const r = await fetch(url, opts);
-  if (r.status === 401) { location.href = "/login"; throw new Error("auth"); }
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) { const e = new Error(j.error || "Something went wrong."); e.data = j; throw e; }
-  return j;
-}
-
-async function search() {
-  const q = $q.value.trim(), mine = ++seq;
-  if (q.length < 2) { $res.innerHTML = ""; $hint.textContent = "Tags go on the guest's SevenRooms profile and show at every pub."; return; }
-  $hint.textContent = "Searching…";
-  try {
-    const { results } = await api("/api/search?q=" + encodeURIComponent(q));
-    if (mine !== seq) return;
-    $res.innerHTML = results.length ? results.map(card).join("") : `<div class="empty">No guests found for “${esc(q)}”.</div>`;
-    $hint.textContent = results.length > 1
-      ? `${results.length} profiles — the same guest can have several. Busiest first.`
-      : results.length ? "1 profile found." : "";
-  } catch (e) { if (mine === seq && e.message !== "auth") { $hint.textContent = ""; toast(e.message, true); } }
-}
-$q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 350); });
-$q.addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(timer); search(); $q.blur(); } });
-
-$res.addEventListener("click", async e => {
-  const b = e.target.closest("button.tag"); if (!b) return;
-  const on = b.dataset.on === "true", tag = b.dataset.tag;
-  // Removing needs a second tap, so a stray thumb can't strip someone's VIP.
-  if (on && !b.classList.contains("confirm")) {
-    b.classList.add("confirm"); b.textContent = "Tap again to remove";
-    setTimeout(() => { if (b.isConnected && !b.disabled) { b.classList.remove("confirm"); b.textContent = tag; } }, 3000);
-    return;
-  }
-  b.classList.remove("confirm");
-  b.disabled = true; b.textContent = on ? "Removing…" : "Saving…";
-  try {
-    const { client } = await api("/api/tag", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: b.dataset.id, tag, action: on ? "remove" : "add" }) });
-    document.getElementById("c-" + client.id).outerHTML = card(client);
-    toast(on ? `${tag} removed from ${client.name}` : `${client.name} marked ${tag} ★`);
-  } catch (err) {
-    if (err.message === "auth") return;
-    b.disabled = false; b.textContent = on ? tag : "Mark " + tag;
-    toast(err.message, true);
-  }
-});
-</script>
+  <script>window.VIP = { tags: {{ tags|tojson }} };</script>
+  <script src="{{ url_for('static', filename='app.js') }}?v={{ v }}"></script>
 </body>
 </html>

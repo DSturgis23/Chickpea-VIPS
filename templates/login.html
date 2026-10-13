@@ -1,23 +1,17 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Chickpea VIPs</title>
-  <meta name="theme-color" content="#5B1A2D">
-  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
-  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-180.png') }}">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="VIPs">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% include "_head.html" %}
 </head>
-<body>
+<body class="login-page">
   <form class="login" method="post">
-    <h1>Chickpea VIPs</h1>
-    <p>Enter your PIN</p>
-    <input type="password" name="pin" inputmode="numeric" autocomplete="current-password" autofocus required>
-    <button class="btn" type="submit">Open</button>
+    {% with size=72 %}{% include "_mark.html" %}{% endwith %}
+    <h1>Chickpea <span>VIPs</span></h1>
+    <p>Enter your PIN to continue</p>
+    <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" aria-label="PIN" autofocus required>
+    <button class="go" type="submit">Unlock</button>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
   </form>
+  <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});</script>
 </body>
 </html>

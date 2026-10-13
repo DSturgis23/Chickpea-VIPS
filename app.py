@@ -27,6 +27,7 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 SR_BASE = "https://api.sevenrooms.com/2_4"
 VENUE_GROUP_ID = "ahNzfnNldmVucm9vbXMtc2VjdXJlciELEhRuaWdodGxvb3BfVmVudWVHcm91cBiAgIXEovSaCQw"
 TAG_CATEGORY = "VIP client type"
+ASSET_VERSION = "2"  # bump when CSS/JS change so installed apps pick up the new files
 VIP_TAGS = [t.strip() for t in os.environ.get("VIP_TAGS", "VIP").split(",") if t.strip()]
 
 app = Flask(__name__)
@@ -89,10 +90,16 @@ def summarise(c):
     """Cut a SevenRooms client down to what's needed to pick the right profile."""
     names = venue_names()
     last_date, last_venue = "", ""
+    fav_venue, fav_visits, pubs = "", 0, 0
     for vid, s in (c.get("venue_stats") or {}).items():
+        venue = names.get(s.get("venue_id") or vid, "")
         d = (s.get("last_visit_date") or "")[:10]
         if d > last_date:
-            last_date, last_venue = d, names.get(s.get("venue_id") or vid, "")
+            last_date, last_venue = d, venue
+        v = s.get("total_visits") or 0
+        pubs += v > 0
+        if v > fav_visits:
+            fav_venue, fav_visits = venue, v
     phone = (c.get("phone_number") or "").replace(" ", "")
     return {
         "id": c["id"],
@@ -100,6 +107,10 @@ def summarise(c):
         "email": _mask_email(c.get("email")),
         "phone": f"•••{phone[-4:]}" if len(phone) >= 4 else "",
         "visits": c.get("total_visits") or 0,
+        "covers": c.get("total_covers") or 0,
+        "spend": round(c.get("total_spend") or 0),
+        "pubs": pubs,
+        "fav_venue": fav_venue if pubs > 1 else "",
         "last_visit": last_date,
         "last_venue": last_venue,
         "tags": sorted({t["tag_display"] for t in c.get("client_tags") or []
@@ -201,6 +212,25 @@ def tag():
     if not done:
         return jsonify(error="SevenRooms didn't apply the change.", client=summary), 502
     return jsonify(client=summary)
+
+
+@app.route("/sw.js")
+def service_worker():
+    # Served from the root so it can control the whole app (scope "/").
+    resp = app.send_static_file("sw.js")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+@app.route("/offline")
+def offline():
+    return render_template("offline.html")
+
+
+@app.context_processor
+def asset_version():
+    return {"v": ASSET_VERSION}
 
 
 @app.route("/healthz")
