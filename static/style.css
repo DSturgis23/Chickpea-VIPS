@@ -229,3 +229,7 @@ button.solid:disabled { opacity: .6; }
 .bookings .skeleton.small { height: 64px; margin: 0; border-radius: 14px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .link-btn { color: var(--gold); } }
 :root[data-theme="dark"] .link-btn { color: var(--gold); }
+
+.spacer { height: 18px; }
+.avatar.small { width: 36px; height: 36px; font-size: 13px; }
+.chev { color: var(--muted); flex: none; }

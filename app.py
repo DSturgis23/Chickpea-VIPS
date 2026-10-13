@@ -20,32 +20,54 @@ Config (environment variables — never commit these):
   VIP_TAGS                         comma-separated tags in the category (default "VIP")
 """
 import os
+import re
 import time
+import hmac
+import hashlib
 import logging
 import secrets
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import wraps
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import requests
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, abort, g, jsonify, redirect, render_template, request, session, url_for
 
 SR_BASE = "https://api.sevenrooms.com/2_4"
 VENUE_GROUP_ID = "ahNzfnNldmVucm9vbXMtc2VjdXJlciELEhRuaWdodGxvb3BfVmVudWVHcm91cBiAgIXEovSaCQw"
 TAG_CATEGORY = "VIP client type"
 UK = ZoneInfo("Europe/London")
 NOTE_MAX = 500
-ASSET_VERSION = "3"  # bump when CSS/JS change so installed apps pick up the new files
+ASSET_VERSION = "4"  # bump when CSS/JS change so installed apps pick up the new files
 VIP_TAGS = [t.strip() for t in os.environ.get("VIP_TAGS", "VIP").split(",") if t.strip()]
+
+PIN_MIN_LEN = 6
+SR_ID = re.compile(r"^[A-Za-z0-9_-]{20,200}$")  # SevenRooms ids are url-safe base64
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
-                  SESSION_COOKIE_SECURE=os.environ.get("RENDER") is not None,
-                  PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 90)  # stay logged in on his phone
+                  SESSION_COOKIE_SECURE=not os.environ.get("LOCAL_DEV"),  # HTTPS-only except local testing
+                  SESSION_COOKIE_NAME="vips_session",
+                  PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30)  # log in again monthly
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("vip")
+
+
+def _pin():
+    return os.environ.get("APP_PIN", "")
+
+
+def _pin_fingerprint():
+    # Stored in the session so that changing APP_PIN logs every device out.
+    return hmac.new(app.secret_key.encode(), _pin().encode(), hashlib.sha256).hexdigest()[:16]
+
+
+if len(_pin()) < PIN_MIN_LEN:
+    log.error("APP_PIN is missing or shorter than %s characters: logins are disabled until it's set.", PIN_MIN_LEN)
 
 # ── SevenRooms ────────────────────────────────────────────────────────────────
 _token = {"value": None, "at": 0.0}
@@ -129,13 +151,32 @@ def summarise(c):
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-_fails = {}  # ip -> (count, first_fail_time)
+WINDOW = 15 * 60
+PER_DEVICE_LIMIT = 5    # wrong PINs per device per window
+GLOBAL_LIMIT = 25       # wrong PINs across everyone per window (stops guessing from many IPs)
+_fails = {}             # ip -> deque of failure times
+_all_fails = deque()
+
+
+def _client_ip():
+    # Render sits behind Cloudflare, which sets CF-Connecting-IP itself and can't be
+    # spoofed by the caller; X-Forwarded-For's first entry can be, so it's a last resort.
+    return (request.headers.get("CF-Connecting-IP") or request.headers.get("True-Client-IP")
+            or (request.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+            or request.remote_addr or "?")
+
+
+def _recent(q, now):
+    while q and now - q[0] > WINDOW:
+        q.popleft()
+    return len(q)
 
 
 def login_required(view):
     @wraps(view)
     def wrapped(*a, **kw):
-        if not session.get("ok"):
+        if not session.get("ok") or session.get("pin") != _pin_fingerprint():
+            session.clear()
             if request.path.startswith("/api/"):
                 return jsonify(error="Please log in again."), 401
             return redirect(url_for("login"))
@@ -147,19 +188,24 @@ def login_required(view):
 def login():
     error = None
     if request.method == "POST":
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0]
-        count, first = _fails.get(ip, (0, time.time()))
-        if time.time() - first > 15 * 60:
-            count, first = 0, time.time()
-        if count >= 5:
-            error = "Too many attempts — try again in 15 minutes."
-        elif secrets.compare_digest(request.form.get("pin", ""), os.environ.get("APP_PIN", "")) and os.environ.get("APP_PIN"):
+        now, ip = time.time(), _client_ip()
+        mine = _fails.setdefault(ip, deque())
+        if len(_pin()) < PIN_MIN_LEN:
+            error = "This app isn't set up yet. Ask Delilah."
+        elif _recent(mine, now) >= PER_DEVICE_LIMIT or _recent(_all_fails, now) >= GLOBAL_LIMIT:
+            error = "Too many attempts. Try again in 15 minutes."
+            log.warning("LOGIN locked out ip=%s", ip)
+        elif hmac.compare_digest(request.form.get("pin", "").strip().encode(), _pin().encode()):
             _fails.pop(ip, None)
+            session.clear()
             session.permanent = True
-            session["ok"] = True
+            session.update(ok=True, pin=_pin_fingerprint())
+            log.info("LOGIN ok ip=%s", ip)
             return redirect(url_for("index"))
         else:
-            _fails[ip] = (count + 1, first)
+            mine.append(now)
+            _all_fails.append(now)
+            log.warning("LOGIN wrong PIN ip=%s", ip)
             error = "That PIN isn't right."
     return render_template("login.html", error=error)
 
@@ -204,7 +250,7 @@ def search():
 def tag():
     body = request.get_json(silent=True) or {}
     client_id, tag_name, action = body.get("client_id"), body.get("tag"), body.get("action")
-    if tag_name not in VIP_TAGS or action not in ("add", "remove") or not client_id:
+    if tag_name not in VIP_TAGS or action not in ("add", "remove") or not SR_ID.match(client_id or ""):
         return jsonify(error="Invalid request."), 400
 
     field = "add_tags" if action == "add" else "remove_tags"
@@ -245,6 +291,8 @@ def _booking(r):
 @app.route("/api/client/<client_id>/bookings")
 @login_required
 def bookings(client_id):
+    if not SR_ID.match(client_id):
+        return jsonify(error="Invalid request."), 400
     today = datetime.now(UK).date()
     r = sr("GET", "/reservations", params={
         "client_id": client_id, "from_date": today.isoformat(),
@@ -266,7 +314,7 @@ def add_note():
     body = request.get_json(silent=True) or {}
     kind, target_id = body.get("kind"), body.get("id")
     text = " ".join((body.get("text") or "").split())  # one line, no stray whitespace
-    if kind not in ("client", "booking") or not target_id or not text:
+    if kind not in ("client", "booking") or not SR_ID.match(target_id or "") or not text:
         return jsonify(error="Write a note first."), 400
     if len(text) > NOTE_MAX:
         return jsonify(error=f"Keep notes under {NOTE_MAX} characters."), 400
@@ -295,6 +343,52 @@ def add_note():
     if not saved:
         return jsonify(error="SevenRooms didn't save the note."), 502
     return jsonify(item=summarise(after) if kind == "client" else _booking(after))
+
+
+# ── Security ──────────────────────────────────────────────────────────────────
+@app.before_request
+def security_checks():
+    g.nonce = secrets.token_urlsafe(16)
+    if request.method == "POST":
+        # Only accept writes from this site's own pages (blocks cross-site form/fetch tricks).
+        origin = request.headers.get("Origin")
+        if origin and urlparse(origin).netloc != request.host:
+            log.warning("blocked cross-origin %s from %s", request.path, origin)
+            abort(403)
+        if request.path.startswith("/api/") and not request.is_json:
+            abort(415)
+    if len(_fails) > 5000:  # keep the lockout table from growing forever
+        now = time.time()
+        for ip in [ip for ip, q in _fails.items() if not _recent(q, now)]:
+            _fails.pop(ip, None)
+
+
+@app.after_request
+def security_headers(resp):
+    h = resp.headers
+    h["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        f"script-src 'self' 'nonce-{g.get('nonce', '')}'; "
+        "style-src 'self' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; "
+        "img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; "
+        "frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'")
+    h["X-Frame-Options"] = "DENY"
+    h["X-Content-Type-Options"] = "nosniff"
+    h["Referrer-Policy"] = "same-origin"  # "no-referrer" makes browsers send Origin: null on forms
+    h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    h["Cross-Origin-Opener-Policy"] = "same-origin"
+    if not os.environ.get("LOCAL_DEV"):
+        h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    # Guest data must not linger in the phone's browser cache.
+    if not request.path.startswith("/static/"):
+        h["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.context_processor
+def csp_nonce():
+    return {"nonce": g.get("nonce", "")}
 
 
 @app.route("/sw.js")

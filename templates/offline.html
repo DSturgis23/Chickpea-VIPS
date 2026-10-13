@@ -8,7 +8,8 @@
     {% with size=72 %}{% include "_mark.html" %}{% endwith %}
     <h1>You're <span>offline</span></h1>
     <p>Chickpea VIPs needs a connection to reach SevenRooms. Check your signal and try again.</p>
-    <button class="go" type="button" onclick="location.reload()">Try again</button>
+    <button class="go" type="button" id="retry">Try again</button>
   </div>
+  <script nonce="{{ nonce }}">document.getElementById("retry").addEventListener("click", () => location.reload());</script>
 </body>
 </html>

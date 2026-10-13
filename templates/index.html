@@ -35,7 +35,7 @@
       <div id="recent-block" hidden>
         <div class="section-label"><b>Recently tagged on this phone</b></div>
         <ul class="recent" id="recent"></ul>
-        <div style="height:18px"></div>
+        <div class="spacer"></div>
       </div>
       <section class="welcome">
         <h2>Who's a VIP?</h2>
@@ -67,7 +67,7 @@
     </div>
   </div>
 
-  <script>window.VIP = { tags: {{ tags|tojson }} };</script>
+  <script nonce="{{ nonce }}">window.VIP = { tags: {{ tags|tojson }} };</script>
   <script src="{{ url_for('static', filename='app.js') }}?v={{ v }}"></script>
 </body>
 </html>

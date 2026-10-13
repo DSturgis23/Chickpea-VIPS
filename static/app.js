@@ -56,9 +56,9 @@
     $("recent-block").hidden = !list.length;
     $("recent").innerHTML = list.map(r => `
       <li class="${r.action === "add" ? "is-vip" : ""}"><button type="button" data-name="${esc(r.name)}">
-        <span class="avatar" style="width:36px;height:36px;font-size:13px">${esc(initials(r.name))}</span>
+        <span class="avatar small">${esc(initials(r.name))}</span>
         <span class="who"><b>${esc(r.name)}</b><span>${r.action === "add" ? "Marked" : "Removed"} ${esc(r.tag)} · ${ago(r.at)}</span></span>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="color:var(--muted)"><path d="M9 6l6 6-6 6"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" class="chev"><path d="M9 6l6 6-6 6"/></svg>
       </button></li>`).join("");
   }
   $("recent").addEventListener("click", e => {
